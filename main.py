@@ -22,23 +22,49 @@ df4 = pd.read_excel('한약네트워크.xlsx', sheet_name=4)  # 효능
 df5 = pd.read_excel('한약네트워크.xlsx', sheet_name=5)  # 질환
 
 
-# 본초생성
-for i in range(len(df0)):
-    key_values = df0.to_dict(orient = 'records')[i]
+# 노드생성 쿼리 만드는 함수
+def create_node_query(data, label, excepts=[]):
 
-    insert_query = "{"
-    for key in key_values.keys():
-        insert_query += f"{str(key)}:'{str(key_values[key])}',"
-    insert_query = insert_query[:-1] + "}"  #마지막 쉼표 제거하고 } 닫기
+    """
+    data : type = Series
+    label : 노드의 라벨
+    excepts : 노드의 속성이 아닌, 관계(엣지)생성에 필요한 칼럼
+    """
+
+    properties_query = "{"
+    for col in data.index:
+        if col in excepts:
+            continue
+        if data.notnull()[col]:
+            properties_query += f"{str(col)}:'{str(data[col])}',"
+    properties_query = properties_query[:-1] + "}"  #마지막 쉼표 제거하고 } 닫기
 
     # "CREATE (黃芩:본초 {name:'黃芩', 한글:'황금'})
-    query = f"""CREATE ({key_values['name']}:본초 {str(insert_query)})"""
+    query = f"""CREATE ({data['name']}:{label} {str(properties_query)})"""
+    return query
+
+
+# 엣지생성 쿼리 만드는 함수
+def create_edge_query(start, destination, properties):
+    query = ""
+    return query
+
+
+# 본초노드 생성
+for i in range(len(df0)):
+    data = df0.iloc[i]
+    query = create_node_query(data, "본초")
     session.run(query)
 
 
+# 약재노드 생성 (단순채취노드)
+data = df1.iloc[1]
+query = create_node_query(data, "약재", excepts=['원재료'])
+query
+
 
 # Run the query
-q = 'MATCH (n) RETURN n LIMIT 2'
+q = 'MATCH (黃芩) RETURN 黃芩'
 results = list(session.run(q))
 record = results[0]
 node = record[0]
