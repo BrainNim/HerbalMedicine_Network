@@ -45,45 +45,94 @@ def create_node_query(data, label, excepts=[]):
 
 
 # 엣지생성 쿼리 만드는 함수
-def create_edge_query(start, destination, properties):
-    query = ""
+def create_edge_query(start, destination, label, properties=None):
+    
+    """
+    start : 출발 노드의 name
+    destination : 도착 노드의 name
+    properties : type=dict
+    """
+
+    properties_query = ""
+    if properties:
+        properties_query = "{"
+        for key in properties:
+            properties_query+= f"""{str(key)}:"{properties[key]}","""
+        properties_query = properties_query[:-1] + "}"  #마지막 쉼표 제거하고 } 닫기
+    
+    query = f"""MATCH (start_node{{name:"{start}"}})
+                MATCH (desti_node{{name:"{destination}"}})
+                CREATE (start_node)-[:{label}{properties_query}]->(desti_node)"""
+
+    query = query.replace('\n','    ')
     return query
 
 
+##### Step 1 #####
 # 본초노드 생성
 for i in range(len(df0)):
     data = df0.iloc[i]
-    query = create_node_query(data, "본초")
+    query = create_node_query(data, label="본초")
     session.run(query)
 
 
+##### Step 2 #####
 # 약재노드 생성 (단순채취노드)
-data = df1.iloc[1]
-query = create_node_query(data, "약재", excepts=['원재료'])
-query
+for i in range(len(df1)):
+    data = df1.iloc[i]
+    query = create_node_query(data, label="약재", excepts=['원재료'])
+    session.run(query)
+
+# 본초->약재 엣지 생성
+for i in range(len(df1)):
+    data = df1.iloc[i]
+    start, destination = data['원재료'], data['name']
+    query = create_edge_query(start, destination, label="약재")
+    session.run(query)
 
 
-# Run the query
-q = 'MATCH (黃芩) RETURN 黃芩'
-results = list(session.run(q))
-record = results[0]
-node = record[0]
+##### Step 3 #####
+# 약재노드 생성 (포제약재) 
+for i in range(len(df2)):
+    data = df2.iloc[i]
+    query = create_node_query(data, label="약재", excepts=['원재료','방법'])
+    session.run(query)
 
-session.close()
+# 본초->약재 엣지 생성
+for i in range(len(df2)):
+    data = df2.iloc[i]
+    start, destination = data['원재료'], data['name']
+    properties = data[['방법']].to_dict()
+    query = create_edge_query(start, destination, label="을_포제", properties=properties)
+    session.run(query)
 
 
+##### Step 4 #####
+# 배합물노드 생성
+for i in range(len(df3)):
+    data = df3.iloc[i]
+    query = create_node_query(data, label="배합물", excepts=['원재료','효능'])
+    session.run(query)
 
-//2 채취 시기별 약재 생성
-match (황금:본초{한글:"황금"})
-create (황금)-[:약재]->(자금:약재{name:"자금(한자)",한글:"자금",채취:1})
-create (황금)-[:약재]->(고금:약재{name:"고금(한자)",한글:"고금",채취:2})
+# 약재->배합물 엣지 생성
+for i in range(len(df3)):
+    data = df3.iloc[i]
+    start, destination = data['원재료'], data['name']
 
-//3 포재약재 생성
-match (고금:약재{한글:"고금"})
-create (고금)-[:을_포제{method:"none"}]->(:약재{name:"生黃芩",한글:"생황금"})
-create (고금)-[:을_포제{method:"alcohol"}]->(:약재{name:"酒黃芩",한글:"주황금"})
-create (고금)-[:을_포제{method:"burn"}]->(:약재{name:"炒黃芩",한글:"초황금"})
-create (고금)-[:을_포제{method:"char"}]->(:약재{name:"炒炭黃芩",한글:"초탄황금"})
+    for sub_start in start.split(','):
+        sub_start = sub_start.strip()
+        # 원재료가 기존에 있는지 체크
+        chk = session.run(f"""MATCH (start_node{{name:"{sub_start}"}}) RETURN (start_node)""")
+        if len(list(chk))==0:  # 없다면 약재노드 생성
+            query = f"""CREATE (:약재{{name:"{sub_start}"}})"""
+            print(query)
+            session.run(query)
+
+        query = create_edge_query(sub_start, destination, label="을_배합")
+        session.run(query)
+
+# 배합물->효능 엣지 생성
+
 
 //4 효능생성
 MATCH (생:약재{name:"生黃芩"})  
